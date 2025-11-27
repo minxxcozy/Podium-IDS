@@ -68,15 +68,15 @@ pip install -r requirements.txt
 ## 🧪 파이프라인 실행 명령어
 ### 1️⃣ Binary 모델 학습
 ```bash
-python3 -m models.train_binary --csv data/autohack2025_train.csv --window-sec 0.2
+python3 -m models.train_binary --csv data/autohack2025_train.csv --window-sec 0.02
 ```
 
 ### 2️⃣ Attack 모델 학습
 ```bash
-python3 -m models.train_attack_multi --csv data/autohack2025_train.csv --window-sec 0.2
+python3 -m models.train_attack_multi --csv data/autohack2025_train.csv --window-sec 0.02
 ```
 
 ### 3️⃣ Test 데이터 예측 & submission.csv 생성
 ```bash
-python -m models.predict_submission --test-csv data/autohack2025_test_data.csv --template-csv data/submission_template.csv --window-sec 0.2
+python -m models.predict_submission --test-csv data/autohack2025_test_data.csv --template-csv data/submission_template.csv --window-sec 0.02
 ```
