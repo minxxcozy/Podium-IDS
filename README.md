@@ -54,6 +54,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
+## ✨ conda 접속
+```bash
+conda activate podium
+```
+
 ## ⚙️ requirements 설치
 ### 1️⃣ pip 최신화
 ```bash
