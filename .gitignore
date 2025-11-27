@@ -20,3 +20,5 @@ models_artifacts/*.pkl
 
 # 기타
 *.log
+*.csv
+*.sh

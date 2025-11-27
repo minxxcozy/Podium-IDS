@@ -11,7 +11,7 @@ import pandas as pd
 def hex_payload_to_bytes(hex_str: str) -> List[int]:
     """
     "00 1A FF 20 ..." 형태의 hex string을 byte 리스트로 변환.
-    공백/탭/콤마/연속 스페이스 등은 무시.
+    공백/탭/콤마 등은 무시.
     """
     if not isinstance(hex_str, str):
         return []
@@ -58,7 +58,6 @@ def byte_histogram_features(byte_values: List[int], n_bins: int = 16) -> Dict[st
         return feats
 
     arr = np.asarray(byte_values, dtype=float)
-    # [0, 256] 구간을 n_bins 로 균등 분할
     hist, _ = np.histogram(arr, bins=n_bins, range=(0, 256))
     total = hist.sum()
     if total <= 0:
@@ -93,9 +92,7 @@ def window_to_feature_vector(
 ) -> Dict[str, float]:
     """
     한 윈도우(df)에 대해 고급 feature vector 생성.
-
-    ⚠️ 중요: train / predict 양쪽에서 동일하게 호출되므로
-    이 함수만 수정해도 전체 모델 feature 구성이 바뀐다.
+    (학습/예측 양쪽에서 공통으로 사용)
     """
     ts_col = col_info["timestamp"]
     id_col = col_info["id"]
@@ -108,7 +105,6 @@ def window_to_feature_vector(
     feats["n_msgs"] = float(n_msgs)
 
     if n_msgs == 0:
-        # 필수 feature들 기본값 0으로
         base_keys = [
             "n_ids",
             "msgs_per_sec",
@@ -131,14 +127,11 @@ def window_to_feature_vector(
         ]
         for k in base_keys:
             feats[k] = 0.0
-        # byte histogram도 0으로 채움
-        bh = byte_histogram_features([], n_bins=16)
-        feats.update(bh)
+        feats.update(byte_histogram_features([], n_bins=16))
         return feats
 
-    # 시간 관련 feature
+    # 시간 관련
     ts = wdf[ts_col].values.astype(float)
-    # duration
     duration = float(ts.max() - ts.min()) if n_msgs > 1 else 0.0
     feats["duration"] = duration
     feats["msgs_per_sec"] = float(n_msgs) / duration if duration > 0 else float(n_msgs)
@@ -155,22 +148,20 @@ def window_to_feature_vector(
         feats["dt_min"] = 0.0
         feats["dt_max"] = 0.0
 
-    # ID 관련 feature
+    # ID 관련
     id_series = wdf[id_col]
     id_counts = id_series.value_counts()
     feats["n_ids"] = float(id_counts.shape[0])
 
     total = float(n_msgs)
     id_freqs = (id_counts / total).values.tolist()
-    # 상위 3개 상대 빈도
     for i in range(3):
         feats[f"id_top{i+1}_freq"] = float(id_freqs[i]) if i < len(id_freqs) else 0.0
 
-    # ID 분포 entropy / 최고 빈도
     feats["id_entropy"] = shannon_entropy(id_series.astype("category").cat.codes.tolist())
     feats["id_max_freq"] = float(id_freqs[0]) if id_freqs else 0.0
 
-    # DLC 관련 feature
+    # DLC
     if dlc_col is not None and dlc_col in wdf.columns:
         dlc_vals = wdf[dlc_col].values.astype(float)
         feats["dlc_mean"] = float(dlc_vals.mean())
@@ -179,7 +170,7 @@ def window_to_feature_vector(
         feats["dlc_mean"] = 0.0
         feats["dlc_std"] = 0.0
 
-    # Payload 기반 feature: 전체 윈도우의 payload byte 모아서 처리
+    # Payload
     all_bytes: List[int] = []
     for s in wdf[data_col].values:
         all_bytes.extend(hex_payload_to_bytes(s))
@@ -196,9 +187,7 @@ def window_to_feature_vector(
         feats["payload_entropy"] = 0.0
         feats["payload_bit_entropy"] = 0.0
 
-    # Byte histogram feature (16-bin)
-    bh = byte_histogram_features(all_bytes, n_bins=16)
-    feats.update(bh)
+    feats.update(byte_histogram_features(all_bytes, n_bins=16))
 
     return feats
 
@@ -209,12 +198,11 @@ def label_for_window_binary(
 ) -> str:
     """
     Stage 1용 Label: Normal vs Attack.
-    윈도우 안에 하나라도 Normal이 아닌 라벨이 있으면 Attack으로 간주.
+    윈도우 안에 하나라도 Normal이 아닌 라벨이 있으면 Attack.
     """
     labels = wdf[label_col].astype(str).values
     if len(labels) == 0:
         return "Normal"
-
     is_attack = labels != "Normal"
     return "Attack" if is_attack.any() else "Normal"
 
@@ -225,8 +213,8 @@ def label_for_window_attack(
 ) -> Optional[str]:
     """
     Stage 2용 Label: {DoS, Fuzzing, Replay, Spoofing} 중 majority.
-    - Normal은 제외하고 Attack 라벨만 대상으로 majority vote.
-    - Attack이 하나도 없으면 None.
+    Normal 제외, Attack 라벨만 대상으로 majority vote.
+    Attack이 없으면 None.
     """
     labels = wdf[label_col].astype(str).values
     attack_labels = labels[labels != "Normal"]
