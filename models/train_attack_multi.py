@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
-from xgboost import XGBClassifier  # 🔥 고성능 트리 기반 모델
+from xgboost import XGBClassifier
 
 from ids.io_utils import load_csv_with_meta
 from ids.windowing import make_time_windows
@@ -65,7 +65,7 @@ def main():
     parser.add_argument(
         "--out",
         type=str,
-        default="models_artifacts/attack_rf.pkl",  # 경로/이름 그대로 유지
+        default="models_artifacts/attack_rf.pkl",
         help="저장할 모델 경로",
     )
 
@@ -78,7 +78,7 @@ def main():
     print(f"[1] Loading train CSV: {csv_path}")
     X, y = build_attack_dataset(csv_path, window_sec)
     print(f"[1] Attack-only Windows: {len(X)}, Features: {X.shape[1]}")
-    print(f"[1] Label dist:")
+    print("[1] Label dist:")
     print(pd.Series(y).value_counts())
 
     if len(X) == 0:
@@ -86,18 +86,22 @@ def main():
 
     X = X.fillna(0.0)
 
+    # 문자열 → 정수 라벨 매핑
+    unique_classes = np.unique(y)
+    class_to_int = {cls: idx for idx, cls in enumerate(unique_classes)}
+    int_to_class = {v: k for k, v in class_to_int.items()}
+    print(f"[1] Class mapping: {class_to_int}")
+
+    y_int = np.array([class_to_int[v] for v in y])
+
     # Train/val split
     X_train, X_val, y_train, y_val = train_test_split(
         X,
-        y,
+        y_int,
         test_size=0.2,
         random_state=42,
-        stratify=y,
+        stratify=y_int,
     )
-
-    classes, counts = np.unique(y_train, return_counts=True)
-    n_classes = len(classes)
-    print(f"[1] Classes: {classes}, counts: {counts}")
 
     print("[2] Training XGBoost (4-class Attack)...")
     clf = XGBClassifier(
@@ -107,7 +111,7 @@ def main():
         subsample=0.9,
         colsample_bytree=0.9,
         objective="multi:softprob",
-        num_class=n_classes,
+        num_class=len(unique_classes),
         tree_method="hist",
         eval_metric="mlogloss",
         n_jobs=-1,
@@ -117,7 +121,10 @@ def main():
 
     print("[3] Validation report:")
     y_pred = clf.predict(X_val)
-    print(classification_report(y_val, y_pred))
+
+    y_pred_str = np.array([int_to_class[i] for i in y_pred])
+    y_val_str = np.array([int_to_class[i] for i in y_val])
+    print(classification_report(y_val_str, y_pred_str))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(
@@ -125,6 +132,7 @@ def main():
             "model": clf,
             "window_sec": window_sec,
             "feature_columns": X.columns.tolist(),
+            "class_map": int_to_class,  # int → str 매핑 저장
         },
         out_path,
     )

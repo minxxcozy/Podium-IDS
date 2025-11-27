@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
-from xgboost import XGBClassifier  # 🔥 고성능 트리 기반 모델
+from xgboost import XGBClassifier
 
 from ids.io_utils import load_csv_with_meta
 from ids.windowing import make_time_windows
@@ -34,7 +34,7 @@ def build_binary_dataset(csv_path: str, window_sec: float) -> tuple[pd.DataFrame
 
     for w in windows:
         wdf = w.df
-        y = label_for_window_binary(wdf, label_col)
+        y = label_for_window_binary(wdf, label_col)  # "Normal" / "Attack"
         feat = window_to_feature_vector(wdf, col_info)
 
         feat_list.append(feat)
@@ -62,7 +62,7 @@ def main():
     parser.add_argument(
         "--out",
         type=str,
-        default="models_artifacts/binary_rf.pkl",  # 경로/이름 그대로 유지
+        default="models_artifacts/binary_rf.pkl",
         help="저장할 모델 경로",
     )
 
@@ -79,24 +79,27 @@ def main():
     # NaN 방지
     X = X.fillna(0.0)
 
+    # 문자열 → 정수 (Normal=0, Attack=1)
+    y_num = np.where(y == "Attack", 1, 0)
+
     # Train/val split
     X_train, X_val, y_train, y_val = train_test_split(
         X,
-        y,
+        y_num,
         test_size=0.2,
         random_state=42,
-        stratify=y,
+        stratify=y_num,
     )
 
     # 클래스 비율 → Attack 비율에 맞는 scale_pos_weight 설정
-    n_normal = (y_train == "Normal").sum()
-    n_attack = (y_train == "Attack").sum()
+    n_normal = (y_train == 0).sum()
+    n_attack = (y_train == 1).sum()
     if n_attack == 0:
         scale_pos_weight = 1.0
     else:
         scale_pos_weight = n_normal / max(1, n_attack)
 
-    print("[2] Training XGBoost (Binary Normal vs Attack)...")
+    print(f"[2] Training XGBoost (Binary Normal vs Attack)... scale_pos_weight={scale_pos_weight:.2f}")
     clf = XGBClassifier(
         n_estimators=500,
         max_depth=6,
@@ -114,9 +117,12 @@ def main():
 
     print("[3] Validation report:")
     y_pred = clf.predict(X_val)
-    print(classification_report(y_val, y_pred))
 
-    # 모델 저장 (기존 구조 유지: dict에 model/window_sec/feature_columns)
+    y_pred_str = np.where(y_pred == 1, "Attack", "Normal")
+    y_val_str = np.where(y_val == 1, "Attack", "Normal")
+    print(classification_report(y_val_str, y_pred_str))
+
+    # 모델 저장
     out_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(
         {
